@@ -1,0 +1,96 @@
+#include    "bsp.h"
+
+
+            MODULE  HAL
+            
+            PUBLIC  SysConfig, LCDconfig                             ;Config funcs
+            PUBLIC  PORT1_ISR, ADC_ISR                             ;Interupts functions
+            PUBLIC  Lcd_strobe                                       ;LCD Functions
+            EXTERN  GPIOconfig, LCDConfig ,ADCConfig                 ;Config funcs
+            EXTERN  state, firstLayer                                ;Variabals
+            EXTERN  A3result
+            
+            RSEG    CODE
+Pull_3      EQU     1747
+;------------------------------------------------------------------------------- 
+Debounce    MACRO   cycles
+            LOCAL   L
+            mov.w   cycles,R15     
+L           dec.w   R15                     
+            jnz     L
+            ENDM
+;-------------------------------------------------------------------------------                            
+Lcd_cmd     MACRO   command
+            Debounce #Pull_3
+            mov.b   command,LCDOut
+            bis.b   #0x20,LCDCntOut
+            NOP
+            NOP
+            bic.b   #0x20,LCDCntOut
+            ENDM
+;---------------------------------------------------------------------------
+;           System Configuration
+;---------------------------------------------------------------------------
+SysConfig   call    #GPIOconfig
+            call    #LCDConfig
+            CALL    #ADCConfig
+            ret          
+;---------------------------------------------------------------------------
+;           LCD Configuration
+;---------------------------------------------------------------------------            
+Lcd_strobe  bis.b   #0x20, LCDCntOut
+            nop
+            nop
+            bic.b   #0x20, LCDCntOut
+            ret
+            
+LCDconfig
+            bic.b       #0xE0, LCDCntOut   ; clear control legs
+            Debounce    #Pull_3
+            mov.b       #0x3F, LCDOut
+            call        #Lcd_strobe
+            Debounce    #Pull_3
+            mov.b       #0x3F, LCDOut
+            call        #Lcd_strobe
+            Debounce    #Pull_3
+            mov.b       #0x3F, LCDOut
+            call        #Lcd_strobe
+            Lcd_cmd     #0x3C
+            Lcd_cmd     #0x3C
+            Lcd_cmd     #0x0F
+            Lcd_cmd     #0x01
+            Lcd_cmd     #0x06
+            Lcd_cmd     #0x80
+            Lcd_cmd     #0x02
+            ret                      
+;---------------------------------------------------------------------------
+;           PORT1 Interrupt Service Routine
+;---------------------------------------------------------------------------
+PORT1_ISR   bit.b #0x01,PBsArrIntPend
+            jnz   P1_0
+            bit.b #0x02,PBsArrIntPend
+            jnz   P1_1
+            bit.b #0x04,PBsArrIntPend
+            jnz   P1_2
+            reti
+            
+P1_0        mov   #1,state
+            jmp   exitLPM0
+P1_1        mov   #2,state
+            jmp   exitLPM0
+P1_2        mov   #3,state
+            jmp   exitLPM0            
+            
+exitLPM0    bic   #CPUOFF,0(SP)
+            bic.b #0xff,PBsArrIntPend
+            reti
+;---------------------------------------------------------------------------
+;           ADC Interrupt Service Routine
+;---------------------------------------------------------------------------
+ADC_ISR   
+            bic     #0x08,ADCIFG
+            bic     #CPUOFF,0(SP)
+            reti 
+;---------------------------------------------------------------------------
+            ENDMOD
+            END

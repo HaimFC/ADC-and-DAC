@@ -1,0 +1,351 @@
+#include    "bsp.h"
+
+                MODULE  API
+            
+                PUBLIC  ClrLCDs, state1Func, state2Func, state3Func              ; Functions - P
+                EXTERN  state, val1, freq11, freq12, cycles, numForAv,numForAv2, MIN, MAX, AVG  ; Variabals   
+                EXTERN  LCDconfig, state0, startAdc                              ; Functions - E
+             
+                RSEG        CODE
+;------------------------------------------------------------------------------- 
+            ;Define polling value 
+;-------------------------------------------------------------------------------  
+Pull_3          EQU         1747
+
+;====================================MACROS=====================================
+;------------------------------------------------------------------------------- 
+               ;LCD MACRO
+;------------------------------------------------------------------------------- 
+Lcd_data        MACRO       valueTolcd
+                Debounce    #Pull_3
+                mov.b       #0x00,LCDOut
+                bis.b       #0x40,LCDCntOut
+                mov.b       valueTolcd,LCDOut 
+                bis.b       #0x20,LCDCntOut
+                NOP
+                NOP
+                bic.b       #0x20,LCDCntOut
+                bic.b       #0x40,LCDCntOut
+                ENDM
+;------------------------------------------------------------------------------- 
+               ;LCD DEBOUNCE
+;------------------------------------------------------------------------------- 
+Debounce        MACRO       cycles
+                LOCAL       L
+                mov.w       cycles,R15     
+L               dec.w       R15                     
+                jnz         L
+                ENDM
+;------------------------------------------------------------------------------- 
+               ;LCD CMD
+;-------------------------------------------------------------------------------              
+Lcd_cmd         MACRO       command
+                Debounce    #Pull_3
+                mov.b       command,LCDOut
+                bis.b       #0x20,LCDCntOut
+                NOP
+                NOP
+                bic.b       #0x20,LCDCntOut
+                ENDM
+;------------------------------------------------------------------------------- 
+            ;Divider
+;-------------------------------------------------------------------------------               
+DIV16bit        MACRO   Divided,Divisor,Quotient,Remainder
+                LOCAL   L1,L2,L3
+                mov     #17,R7
+                clr     R8                ; Quotient register
+                mov.w   Divided,R4        ; Devided registers is R5,R4
+                clr     R5
+                mov.w   Divisor,R6        ; Divisor registers is R6
+                
+L3              rla     R8
+L1              dec     R7
+                jz      L2
+                rla     R4
+                rlc     R5
+                cmp     R6,R5
+                jlo     L3
+                sub     R6,R5
+                setc
+                rlc     R8
+                jmp     L1
+                
+L2              mov.w   R8,Quotient
+                mov.w   R5,Remainder
+                ENDM
+;------------------------------------------------------------------------------- 
+            ;Mul
+;-------------------------------------------------------------------------------                 
+MUL16bit        MACRO   NUM, CYCLES  ; RESAULT IN R13
+                LOCAL   LoopSum
+                CLR     R13
+                MOV     CYCLES, R14
+LoopSum         ADD     NUM,    R13
+                DEC     R14
+                JNZ     LoopSum
+                ENDM   
+;=============================PROGRAM CODE======================================                          
+state1Func     
+                call #printLines
+stateLoop       MOV #1023 ,R11  ; SET AS MIN VALUE
+                clr R10         ; SET AS MAX VALUE
+adcTime         
+                call     #startAdc
+                bis.w    #CPUOFF+GIE,SR
+                
+                CLRN
+                CMP R10, ADCMEM
+                JN lowerValue
+                mov ADCMEM, R10               
+lowerValue
+                cmp ADCMEM, R11
+                JN  endOfCheck
+                mov ADCMEM, R11 
+endOfCheck 
+                cmp.b   #0x01,state
+                jne     stopState
+                dec     cycles
+                jnz     adcTime
+                
+printMax        pushIt R10
+                call   #divideM
+                pushIt #0xC0
+                call   #printFixed
+                
+                mov #48, val1
+                mov #48, freq11
+                mov #48, freq12
+                
+printMin        pushIt R11
+                call   #divideM
+                push   #0x02 
+                call   #printFixed
+                
+                mov #1000, cycles
+                mov #48, val1
+                mov #48, freq11
+                mov #48, freq12
+                jmp stateLoop
+                
+stopState       ret       
+;----------------------------Private State1 Methods-----------------------------                
+printLines                                   
+                Lcd_data  #'V' 
+                Lcd_data  #'m' 
+                Lcd_data  #'i' 
+                Lcd_data  #'n'
+                Lcd_data  #'='
+                Lcd_data  #'0'
+                Lcd_data  #'.'
+                Lcd_data  #'0'
+                Lcd_data  #'0'
+                Lcd_data  #'['
+                Lcd_data  #'v'
+                Lcd_data  #']'    
+                Lcd_cmd #0xC0    
+                Lcd_data  #'V' 
+                Lcd_data  #'m' 
+                Lcd_data  #'a' 
+                Lcd_data  #'x'
+                Lcd_data  #'='
+                Lcd_data  #'0'
+                Lcd_data  #'.'
+                Lcd_data  #'0'
+                Lcd_data  #'0'
+                Lcd_data  #'['
+                Lcd_data  #'v'
+                Lcd_data  #']'
+                ret 
+divideM       
+                pop R9
+                POP R12
+                DIV16bit R12, #divideNum, 0,0
+                ADD  R8, val1
+                MUL16bit R5, #10
+                nop
+                DIV16bit R13, #divideNum, 0,0
+                ADD  R8, freq11
+                MUL16bit R5, #10
+                nop
+                DIV16bit R13, #divideNum, 0,0
+                ADD  R8, freq12
+                pushIt R9
+                ret
+
+printFixed      pop R9
+                POP R12
+                Lcd_cmd R12 
+                Lcd_cmd #0x14 
+                Lcd_cmd #0x14 
+                Lcd_cmd #0x14 
+                Lcd_cmd #0x14 
+                Lcd_cmd #0x14                 
+                MOV val1, R12
+                Lcd_data R12
+                Lcd_cmd #0x14
+                MOV freq11, R12
+                Lcd_data R12
+                MOV freq12, R12
+                Lcd_data R12
+                pushIt R9
+                ret
+;-------------------------------------------------------------------------------          
+state2Func      
+                Lcd_data  #'V' 
+                Lcd_data  #'a' 
+                Lcd_data  #'v' 
+                Lcd_data  #'g' 
+                Lcd_data  #'='
+                Lcd_data  #'0'
+                Lcd_data  #'.'
+                Lcd_data  #'0'
+                Lcd_data  #'0'
+                Lcd_data  #'['
+                Lcd_data  #'v'
+                Lcd_data  #']'
+
+                clr R10         
+avarageOfV      cmp.b    #0x02,state
+                jne      stopState2
+                call     #startAdc
+                bis.w    #CPUOFF+GIE,SR
+
+                ADD      ADCMEM, R10
+                dec      numForAv
+                jnz      avarageOfV
+                DIV16bit R10, #avgNum,0,0
+                ADD      R8, R12
+                clr R10
+                mov #avgNum, numForAv
+                DEC      numForAv2
+                jnz      avarageOfV
+                DIV16bit R12, #avgNum,0,0
+                pushIt R8
+                call #divideM
+                push #0x02 
+                call #printFixed
+                mov #48, val1
+                mov #48, freq11
+                mov #48, freq12
+                mov #avgNum, numForAv
+                mov #avgNum, numForAv2
+                clr R12 
+                jmp  avarageOfV
+stopState2      ret
+;------------------------------------------------------------------------------- 
+state3Func      Lcd_data  #'I' 
+                Lcd_data  #'s' 
+                Lcd_data  #' ' 
+                Lcd_data  #'t' 
+                Lcd_data  #'h'
+                Lcd_data  #'e'
+                Lcd_data  #' '
+                Lcd_data  #'s'
+                Lcd_data  #'i'
+                Lcd_data  #'g'
+                Lcd_data  #'n'
+                Lcd_data  #'a' 
+                Lcd_data  #'l' 
+                Lcd_cmd #0xC0  
+                Lcd_data  #'S'
+                Lcd_data  #'y'
+                Lcd_data  #'m' 
+                Lcd_data  #'e'
+                Lcd_data  #'t'
+                Lcd_data  #'r'
+                Lcd_data  #'i'
+                Lcd_data  #'c'
+                Lcd_data  #':'
+                
+                
+mainLoop        MOV #1023 ,R11  ; SET AS MIN VALUE
+                clr R10         ; SET AS MAX VALUE
+                clr R12         ; Set avg num
+lab6Loop         
+                call     #startAdc
+                bis.w    #CPUOFF+GIE,SR
+                
+                CLRN
+                CMP R10, ADCMEM
+                JN lowValue
+                mov ADCMEM, R10               
+lowValue
+                cmp ADCMEM, R11
+                JN  endCheck
+                mov ADCMEM, R11 
+endCheck 
+                cmp.b   #0x03,state
+                jne     stopLab
+                dec     cycles
+                jnz     lab6Loop
+                mov #1000, cycles
+                
+avarageLab6     cmp.b    #0x03,state
+                jne      stopLab
+                call     #startAdc
+                bis.w    #CPUOFF+GIE,SR
+
+                ADD      ADCMEM, R13
+                dec      numForAv 
+                jnz      avarageLab6
+                DIV16bit R13, #avgNum,0,0
+                ADD      R8, R12
+                clr R13
+                mov #avgNum, numForAv
+                DEC      numForAv2
+                jnz      avarageLab6
+                DIV16bit R12, #avgNum,0,0
+                mov R8, R14
+                mov #avgNum, numForAv
+                mov #avgNum, numForAv2
+                clr R12
+                sub R11, R10
+                rra R10
+                call #checkYON
+                mov #avgNum, numForAv
+                mov #avgNum, numForAv2
+                CLR  R10
+                CLR  R11
+                CLR  R13
+                CLR  R14
+                Lcd_cmd #0x10 
+                Lcd_cmd #0x10 
+                Lcd_cmd #0x10 
+                jmp  mainLoop
+
+stopLab         ret 
+
+
+checkYON
+               CLRN
+               cmp  R10, R14
+               JN   AVGisLower
+               ADD #20, R10
+               clrn
+               SUB R10, R14
+               JN  printYes
+               jmp printNo
+AVGisLower    
+               clrn
+               ADD #20, R14
+               SUB R14, R10
+               JN  printYes
+printNo        Lcd_data  #'n'
+               Lcd_data  #'o'
+               Lcd_data  #' '
+               ret
+printYes       
+               
+               Lcd_data  #'y'
+               Lcd_data  #'e'
+               Lcd_data  #'s'     
+               RET
+;-------------------------------------------------------------------------------       
+                       ;LCD API FUNCTIONS   
+;-------------------------------------------------------------------------------         
+ClrLCDs   
+                call   #LCDconfig
+                ret
+;-------------------------------------------------------------------------------          
+                ENDMOD
+                END

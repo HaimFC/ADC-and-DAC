@@ -1,0 +1,49 @@
+#include    "bsp.h"
+
+
+            MODULE  BSP
+            
+            PUBLIC  GPIOconfig, LCDConfig ,ADCConfig, startAdc
+
+            RSEG    CODE
+            
+;---------------------------------------------------------------------------
+;           GPIO    configuration
+;---------------------------------------------------------------------------
+GPIOconfig
+StopWTD     MOV.W   #WDTPW+WDTHOLD,&WDTCTL   ;configure the PB0-PB2
+            bic.b   #0xc0, PBsArrPortSel
+            bic.b   #0x07, PBsArrPortDir
+            bis.b   #0x07, PBsArrIntEdgeSel
+            bis.b   #0x07, PBsArrIntEn
+            bic.b   #0xf8, PBsArrIntEn
+            bic.b   #0x07, PBsArrIntPend 
+                       
+            bis.b   #BIT4, &pulsePin    ;configure P6.3 FOR ADC
+            ret             
+;---------------------------------------------------------------------------
+;           LCD configuration
+;---------------------------------------------------------------------------
+LCDConfig 
+             bic.b   #0xFF, LCDSel     ;LcDs need to be I/O
+             bis.b   #0xFF, LCDDir     ;LCD data need to be output
+             bic.b   #0xE0, LCDCntSel  ;p1.5-7 GPIO 
+             bis.b   #0xE0, LCDCntDir  ;Control Legs for LCD
+             ret
+;---------------------------------------------------------------------------
+;---------------------------------------------------------------------------
+;           ADC configuration
+;---------------------------------------------------------------------------
+ADCConfig    mov.w   #ctl0Cfg, ADCCTRL0 	        ; Sampling time, ADC12 on
+             mov.w   #ctl1Cfg, ADCCTRL1
+             moveIt   #INCH_3,onlyFor419      		;Analog input is A3, VR+=3.3v  VR-=0v
+             mov.w   #BIT4,ADCIE           		; Enable interrupt
+             bis.w   #ENC,ADCCTRL0                   		                           
+             ret
+             
+startAdc     mov.w   #0x08,ADCIE   
+             bis.w   #ADCSC,ADCCTRL0    		; Start sampling/conversion
+             ret
+;---------------------------------------------------------------------------
+            ENDMOD
+            END
